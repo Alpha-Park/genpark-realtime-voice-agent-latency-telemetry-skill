@@ -1,48 +1,97 @@
-import sys, json
+"""Line-delimited JSON-RPC stdio transport, tested with the official MCP client."""
+import inspect
+import json
+import math
+import sys
 from client import RealtimeVoiceLatencyTelemetry
 
-def main():
-    prof = RealtimeVoiceLatencyTelemetry()
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        print(json.dumps(prof.run_benchmark_telemetry_profiling(), indent=2))
-        return
+NAME = 'genpark-voice-latency'
+VERSION = "1.0.1"
+SCHEMAS = {'record_pipeline_event': {'turn_id': {'type': 'string'}, 'stage_name': {'type': 'string'}, 'timestamp_ms': {'type': 'number'}, 'metadata': {'type': 'object'}}, 'compute_turn_latency_breakdown': {'turn_id': {'type': 'string'}}, 'generate_sla_diagnostic_report': {}, 'run_benchmark_telemetry_profiling': {}}
 
+def validate(value, schema):
+    kind = schema.get("type")
+    valid = {"object": isinstance(value, dict), "array": isinstance(value, list),
+             "string": isinstance(value, str),
+             "number": type(value) in (int, float) and math.isfinite(value),
+             "boolean": type(value) is bool, "integer": type(value) is int}
+    if kind and not valid[kind]:
+        raise ValueError("Expected " + kind)
+    if kind in ("number", "integer") and "minimum" in schema and value < schema["minimum"]:
+        raise ValueError("Value below minimum")
+    if kind in ("number", "integer") and "maximum" in schema and value > schema["maximum"]:
+        raise ValueError("Value above maximum")
+    if kind == "array":
+        for item in value:
+            validate(item, schema["items"])
+    if kind == "object":
+        props = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                raise ValueError("Missing argument: " + key)
+        for key, item in value.items():
+            if key in props:
+                validate(item, props[key])
+            elif schema.get("additionalProperties") is False:
+                raise ValueError("Unknown argument: " + key)
+            elif isinstance(schema.get("additionalProperties"), dict):
+                validate(item, schema["additionalProperties"])
+
+def main():
+    client = RealtimeVoiceLatencyTelemetry()
+    if "--test" in sys.argv:
+        print(json.dumps(getattr(client, 'run_benchmark_telemetry_profiling')(), allow_nan=False))
+        return
     for line in sys.stdin:
-        if not line.strip(): continue
+        if not line.strip():
+            continue
+        rid = None
         try:
             req = json.loads(line)
-            method = req.get("method")
-            params = req.get("params", {})
-            rid = req.get("id")
-
-            if method == "tools/list":
-                res = {
-                    "tools": [
-                        {"name": "record_pipeline_event", "description": "Record pipeline stage timestamp (VAD, STT, LLM_FIRST_TOKEN, TTS_FIRST_AUDIO, PLAYOUT)."},
-                        {"name": "compute_turn_latency_breakdown", "description": "Calculate stage-by-stage latency breakdown and critical path."},
-                        {"name": "generate_sla_diagnostic_report", "description": "Produce SLA latency percentiles (P50, P90, P99) and bottleneck diagnostic."},
-                        {"name": "run_benchmark_telemetry_profiling", "description": "Simulate and benchmark multi-turn voice session latency analytics."}
-                    ]
-                }
+        except (ValueError, TypeError):
+            print(json.dumps({"jsonrpc":"2.0","id":None,"error":{"code":-32700,"message":"Parse error"}}), flush=True)
+            continue
+        if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+            print(json.dumps({"jsonrpc":"2.0","id":None,"error":{"code":-32600,"message":"Invalid Request"}}), flush=True)
+            continue
+        if "id" not in req:
+            continue  # Notifications never receive a response.
+        rid = req["id"]
+        response = {"jsonrpc":"2.0", "id":rid}
+        method = req["method"]
+        params = req.get("params", {})
+        try:
+            if not isinstance(params, dict):
+                raise ValueError("params must be an object")
+            if method == "initialize":
+                requested = params.get("protocolVersion")
+                version = requested if requested in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25") else "2025-11-25"
+                result = {"protocolVersion":version,"capabilities":{"tools":{"listChanged":False}},"serverInfo":{"name":NAME,"version":VERSION}}
+            elif method == "ping":
+                result = {}
+            elif method == "tools/list":
+                result = {"tools":[{"name":n,"description":inspect.getdoc(getattr(client,n)) or n.replace("_", " "),"inputSchema":{"type":"object","properties":p,"required":list(p),"additionalProperties":False}} for n,p in SCHEMAS.items()]}
             elif method == "tools/call":
-                tname = params.get("name")
+                name = params.get("name")
+                if not isinstance(name, str) or name not in SCHEMAS:
+                    raise ValueError("Unknown tool")
                 args = params.get("arguments", {})
-                if tname == "record_pipeline_event":
-                    out = prof.record_pipeline_event(args.get("turn_id", "default"), args.get("stage_name", "UNKNOWN"), args.get("timestamp_ms"), args.get("metadata"))
-                elif tname == "compute_turn_latency_breakdown":
-                    out = prof.compute_turn_latency_breakdown(args.get("turn_id", "default"))
-                elif tname == "generate_sla_diagnostic_report":
-                    out = prof.generate_sla_diagnostic_report()
-                elif tname == "run_benchmark_telemetry_profiling":
-                    out = prof.run_benchmark_telemetry_profiling()
-                else:
-                    out = {"error": f"Unknown tool {tname}"}
-                res = {"content": [{"type": "text", "text": json.dumps(out)}]}
+                validate(args, {"type":"object","properties":SCHEMAS[name],"required":list(SCHEMAS[name]),"additionalProperties":False})
+                try:
+                    # Benchmarks use isolated state; they cannot reset a live session.
+                    instance = RealtimeVoiceLatencyTelemetry() if name.startswith("run_benchmark_") else client
+                    value = getattr(instance,name)(**args)
+                    result = {"content":[{"type":"text","text":json.dumps(value, allow_nan=False)}],"isError":False}
+                except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+                    result = {"content":[{"type":"text","text":str(exc)}],"isError":True}
             else:
-                res = {"error": "Unsupported method"}
-            print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": res}), flush=True)
-        except Exception as e:
-            print(json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}}), flush=True)
+                response["error"] = {"code":-32601,"message":"Method not found"}
+                print(json.dumps(response), flush=True)
+                continue
+            response["result"] = result
+        except (ValueError, TypeError, OverflowError) as exc:
+            response["error"] = {"code":-32602,"message":str(exc)}
+        print(json.dumps(response, allow_nan=False), flush=True)
 
 if __name__ == "__main__":
     main()

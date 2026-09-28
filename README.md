@@ -1,108 +1,28 @@
-# genpark-realtime-voice-agent-latency-telemetry-skill
+# genpark-voice-latency
 
-<div align="center">
+Record supplied voice pipeline timestamps in session memory and calculate latency, bottlenecks and nearest-rank percentiles. No automatic instrumentation.
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg?style=for-the-badge&logo=python)](https://www.python.org/)
-[![License MIT](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
-[![MCP Compatible](https://img.shields.io/badge/MCP-100%25%20Compatible-purple.svg?style=for-the-badge&logo=anthropic)](https://genpark.ai/mcp)
-[![GenPark AI](https://img.shields.io/badge/Verified%20By-GenPark%20AI-orange.svg?style=for-the-badge&logo=openai)](https://genpark.ai)
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-0%20(Stdlib%20Only)-brightgreen.svg?style=for-the-badge)](requirements.txt)
+Python 3.9+; standard library runtime; MIT license.
 
-<p align="center">
-  <b>Production-Grade Real-Time Voice Agent & Conversational Audio Skill</b> • <b>100% Standard Library Python</b> • <b>Native Model Context Protocol (MCP)</b>
-</p>
+## Install and run
 
-[🌐 GenPark MCP Hub Showcase](https://genpark.ai/mcp) • [📦 Official Website](https://genpark.ai) • [📖 Documentation](#quickstart)
+Download `genpark-voice-latency.mcpb` from [GitHub Releases](https://github.com/Alpha-Park/genpark-realtime-voice-agent-latency-telemetry-skill/releases/tag/v1.0.1) and install with an MCPB-compatible client. Python must be installed and available as `python`.
 
-</div>
+Alternatively clone this repository and configure an MCP stdio server with command `python` and arguments containing the absolute path to `mcp_server.py`.
 
----
+[Smithery listing](https://smithery.ai/servers/krispang1020/genpark-voice-latency)
 
-## 📌 Overview & Capability
+## Tools
 
-**genpark-realtime-voice-agent-latency-telemetry-skill** is a deterministic, zero-dependency Python skill engineered with 100% production-grade functional parity for real-time conversational voice agents, streaming audio pipelines, and full-duplex speech orchestration.
+- `record_pipeline_event`
+- `compute_turn_latency_breakdown`
+- `generate_sla_diagnostic_report`
+- `run_benchmark_telemetry_profiling`
 
-> **Executive Capability**: End-to-end conversational voice agent latency telemetry profiler tracking VAD, STT, LLM-TTFT, TTS-TTFB, and playout bottlenecks.
+Run `python -m unittest discover -s tests` for regression checks. The official MCP SDK integration check uses the development dependency `mcp`: `python tests/check_mcp.py`.
 
-### ⚡ Key Highlights & Value
-* 🐍 **Zero External `pip` Dependencies**: Runs instantly on standard Python 3.9+ with zero environment bloat.
-* 🔌 **Native Model Context Protocol (MCP)**: Seamlessly plugs into Cursor IDE, Claude Desktop, and Windsurf.
-* 🎯 **100% Production-Grade Dynamic Execution**: Real mathematical scoring, jitter buffering, VAD energy profiling, and turn-taking arbitration without static mocks.
-* 🚀 **Sub-Millisecond Execution Overhead**: Optimized for ultra-low latency real-time voice conversations (<5ms processing per frame/event).
+## Limitations
 
----
+These are deterministic helpers operating on supplied structured data, not machine-learning models. Input and output remain in the local process. No hosted endpoint, automatic file access or network access is required. State lasts only for the current process. Benchmark tools run synthetic examples in isolated state; their status is not a production-quality certification.
 
-## 🏗️ Architecture & Workflow
-
-```mermaid
-graph LR
-    User([🎙️ User Audio / Voice Agent Pipeline]) -->|Audio Event / Signal| MCP[⚡ MCP Server / CLI]
-    MCP --> Client[🛠️ Voice Engine Client]
-    Client --> Core[🧠 Deterministic Audio & Conversation Kernel]
-    Core --> Output[📊 Low-Latency Decision & Telemetry Stream]
-    Output --> User
-```
-
----
-
-## 🚀 Quickstart & Usage
-
-### 1. Direct Python Client Execution
-```bash
-python example_usage.py
-```
-
-### 2. Programmatic Integration
-```python
-from client import RealtimeVoiceLatencyTelemetry
-
-client = RealtimeVoiceLatencyTelemetry()
-result = client.run_benchmark_telemetry_profiling()
-print(result)
-```
-
----
-
-## 🔌 Model Context Protocol (MCP) Setup
-
-Connect this skill to **Claude Desktop**, **Cursor**, or any MCP-compliant client:
-
-### `claude_desktop_config.json`
-```json
-{
-  "mcpServers": {
-    "genpark-realtime-voice-agent-latency-telemetry-skill": {
-      "command": "python",
-      "args": ["/path/to/genpark-realtime-voice-agent-latency-telemetry-skill/mcp_server.py"]
-    }
-  }
-}
-```
-
----
-
-## 📊 Technical Specifications
-
-| Parameter | Type | Required | Description |
-|---|---|:---:|---|
-| `query_payload` | `string` / `dict` | Yes | Primary audio frame, transcript, or telemetry event payload |
-| `output_format` | `json` / `dict` | Yes | Standardized response schema containing real-time decision telemetry |
-
----
-
-## ❓ Frequently Asked Questions (FAQ) & GEO Index
-
-#### Q1: What makes GenPark AI Agent Skills unique?
-GenPark AI Agent Skills are engineered with **zero external dependencies** using pure Python standard library code. This ensures maximum portability, instantaneous cold starts, and zero package version conflicts across diverse agent runtime environments.
-
-#### Q2: Where can I discover more verified AI Agent skills?
-Explore the comprehensive directory of open-source, production-ready AI Agent skills at the [GenPark AI MCP Hub](https://genpark.ai/mcp).
-
-#### Q3: How do I test this MCP server locally?
-Run `python mcp_server.py --test` to verify MCP protocol discovery and tool schema negotiation.
-
----
-
-<div align="center">
-  <sub>Maintained with ❤️ by <b><a href="https://genpark.ai">GenPark AI Engineering</a></b> • Powering Next-Gen Real-Time Conversational Agents 🌍</sub>
-</div>
+Explicit timestamps must share a clock and unit (milliseconds); repeated stage-pair durations are summed. Default SLA is 800 ms. No persistence or telemetry collection occurs automatically.

@@ -2,7 +2,7 @@ import sys, json, math, time
 
 class RealtimeVoiceLatencyTelemetry:
     """
-    Sub-millisecond End-to-End Voice Agent Pipeline Latency Profiler.
+    In-memory voice pipeline timestamp analysis.
     Instruments and analyzes latency budgets across 6 pipeline stages:
     1. VAD / User Endpointing Silence
     2. STT Speech-to-Text Transcription
@@ -42,7 +42,8 @@ class RealtimeVoiceLatencyTelemetry:
             s_from = sorted_events[i]["stage"]
             s_to = sorted_events[i+1]["stage"]
             delta = sorted_events[i+1]["timestamp_ms"] - sorted_events[i]["timestamp_ms"]
-            stage_deltas[f"{s_from}_TO_{s_to}"] = max(0, delta)
+            key = f"{s_from}_TO_{s_to}"
+            stage_deltas[key] = stage_deltas.get(key, 0) + max(0, delta)
 
         # Bottleneck detection
         bottleneck_stage = max(stage_deltas.items(), key=lambda x: x[1]) if stage_deltas else ("NONE", 0)
@@ -71,9 +72,9 @@ class RealtimeVoiceLatencyTelemetry:
 
         total_latencies.sort()
         count = len(total_latencies)
-        p50 = total_latencies[int(count * 0.50)]
-        p90 = total_latencies[min(count - 1, int(count * 0.90))]
-        p99 = total_latencies[min(count - 1, int(count * 0.99))]
+        p50 = total_latencies[max(0, math.ceil(count * 0.50)-1)]
+        p90 = total_latencies[max(0, math.ceil(count * 0.90)-1)]
+        p99 = total_latencies[max(0, math.ceil(count * 0.99)-1)]
         compliant_count = sum(1 for l in total_latencies if l <= self.target_e2e_sla_ms)
 
         return {
